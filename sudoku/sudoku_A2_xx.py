@@ -31,7 +31,7 @@ class Sudoku(object):
 
     def solve(self):
         values = dict((square, digits) for square in squares)
-
+        # scan puzzle and update values accordingly
         for i in range(9):
             for j in range(9):
                 digit = str(self.puzzle[j][i])
