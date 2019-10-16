@@ -3,6 +3,7 @@ import copy
 from collections import deque
 import pprint
 
+
 class Sudoku(object):
 
     # 1. Assign all values that can be deterministically assigned based off
@@ -29,6 +30,8 @@ class Sudoku(object):
         # square_domain: Dict of the domain of each square. Domain is a list
         self.square_domain = self.initialise_domains()
         self.neighbour_domain = self.initialise_neighbours()
+        # A unit is a list of squares that belong in the same row, column or block
+        self.units = self.initialise_units()
 
 #### INITIALIZATION ######################################################################
 
@@ -49,6 +52,12 @@ class Sudoku(object):
                   for square in self.squares)
         return nb
 
+    # Returns a dictionary of Square => Units containing Square
+    def initialise_units(self):
+        u = dict((square, self.enumerate_units(square))
+                 for square in self.squares)
+        return u
+
     # Returns all neighbours of a square
     def enumerate_neighbours(self, square):
         row = [copy.deepcopy(r) for r in self.rows if square in r][0]
@@ -58,6 +67,13 @@ class Sudoku(object):
         col.remove(square)
         block.remove(square)
         return list(dict.fromkeys(row + col + block))
+
+    # Enumerates all units for a square
+    def enumerate_units(self, square):
+        row = [copy.deepcopy(r) for r in self.rows if square in r]
+        col = [copy.deepcopy(c) for c in self.cols if square in c]
+        block = [copy.deepcopy(b) for b in self.blocks if square in b]
+        return row + col + block
 
     # Returns all neighbours of a square
     def get_neighbours(self, square):
@@ -100,6 +116,10 @@ class Sudoku(object):
     def unsolvable_test(self, square_domain):
         return any(len(square_domain[square]) == 0 for square in square_domain)
 
+    # Returns a list of (len, Square) of all Squares that are not yet assigned
+    def get_unassigned_squares(self, domains):
+        return [(len(domains[square]), square) for square in domains if len(domains[square]) > 1]
+
 #### PREPROCESSING STEPS ##################################################################
 
     # AC-3 Algorithm that updates puzzle and square_domain in place
@@ -137,7 +157,7 @@ class Sudoku(object):
                     updated_neighbours.append(neighbour)
         return updated_neighbours
 
-#### Searching ####################################################################
+#### Searching #############################################################################
 
     # Returns domains if success, False otherwise
     def search(self, domains):
@@ -148,36 +168,56 @@ class Sudoku(object):
             return domains
 
         # Get square with the least available value
-        num_available_values, square_to_assign = min(self.get_unassigned_squares(domains))
+        num_available_values, square_to_assign = min(
+            self.get_unassigned_squares(domains))
         available_values = domains[square_to_assign]
 
+        # Assign each value to the square and recurse
         for digit in available_values:
             domains[square_to_assign] = digit
-            new_domains = self.shrink_domains_search(
-                self.get_neighbours(square_to_assign), digit, domains.copy())
+            new_domains = self.shrink_domains_recursive(
+                square_to_assign, digit, domains.copy())
+
             result = self.search(new_domains)
             if result:
                 return result
 
     # Returns domains after propagation
-    def shrink_domains_search(self, neighbours, digit, domains):
-        for neighbour in neighbours:
+    def shrink_domains_recursive(self, square, digit, domains):
+        for neighbour in self.get_neighbours(square):
             domain = domains[neighbour]
             if digit in domain:
                 domains[neighbour] = domain.replace(digit, '')
-                if len(domains[neighbour]) == 1:
-                    self.shrink_domains_search(self.get_neighbours(neighbour), domains[neighbour], domains)
+                # If a square is reduced to one value, propagate contraints to its neighbours
+                num_values_left = len(domains[neighbour])
+                if num_values_left == 1:
+                    self.shrink_domains_recursive(
+                        neighbour, domains[neighbour], domains)
+                # Early termination
+                elif num_values_left == 0:
+                    return domains
+
+                # If there is only one square left for the eliminated digit in any enclosing unit,
+                # Assign the digit to the square and propagate constraints accordingly
+                for unit in self.units[neighbour]:
+                    squares_left_for_digit = [
+                        square for square in unit if digit in domains[square]]
+                    spaces_left = len(squares_left_for_digit)
+                    if spaces_left == 1:
+                        last_square = squares_left_for_digit[0]
+                        domains[last_square] = digit
+                        self.shrink_domains_recursive(
+                            last_square, digit, domains)
+
         return domains
 
-    def get_unassigned_squares(self, domains):
-        return [(len(domains[square]), square) for square in domains if len(domains[square]) > 1]
+#### Solution ################################################################################
 
     def solve(self):
         self.propagate_constraints()    # AC-3 algorithm: Preprocessing
+        # Searching with AC-3 propagation
         self.square_domain = self.search(self.square_domain.copy())
         self.ans = self.domains_to_puzzle()
-        # Backtracking (DFS) algorithm
-        # state, domains = self.backtrack_search(self.puzzle, self.square_domain)
         return self.ans
 
 
