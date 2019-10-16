@@ -2,41 +2,12 @@ import sys
 import copy
 import deque
 
-# A unit is a list of squares that must all have different digits
-list_of_units = rows + cols + blocks
-# units[square] returns all units that the square belongs to
-units = dict((square,
-              [unit for unit in list_of_units if square in unit])
-             for square in squares)
-# peers[square] returns a list of squares that are in the same units as the given square
-peers = dict((square,
-              # Remove duplicate squares from list
-              list(
-                  set(sum(units[square], [])) - set([square]) # A square is not a peer of itself
-                  ))
-             for square in squares)
 
 class Sudoku(object):
-    # Two constraints:
-    # 1. Shrinking of domains when peers use a values
-    # 2. Write the function assign_if_certain() Just assigns a value if domain is size 1. Updates both state representations
-    # 3. Write the inference function that does a set left-diff with all its peers and assigns if only 1 value is left
-
-    # Assign values and shrink all domains (Repeatedly)
 
     ## 1. Assign all values that can be deterministically assigned based off
     ##    what values peers in the same Unit have taken.
-    ## 2. Assign all values based off inference via set difference with its
-    ##    peers domains.
     ## 3. Perform Back-Tracking Search
-
-    # domain size 1
-    # set difference with peers
-    # By this point, there is either deterministically a value, to which we assign
-    # , update all neighbours, and add them back into the queue.
-    # Or there is no deterministic value and we remove him from the queue
-
-    # BFS
 
     def __init__(self, puzzle):
         self.digits = '123456789'
@@ -57,56 +28,19 @@ class Sudoku(object):
                     domain[(row, col)] = str(val)
         return domain
 
-
     # Converts the square_domain dictionary to a puzzle (list of lists)
-    # - Strict: ValueError if the domain of any square is not of length 1
-    def domains_to_puzzle(self, strict=True):
+    def domains_to_puzzle(self):
         rows = []
         for i in range(1, 10):
             row = []
             for j in range(1, 10):
                 domain = self.square_domain[(i, j)]
-                if strict and len(domain) != 1:
-                    err_str = "The domain of {} is: {}".format((i, j), domain)
-                    raise ValueError(err_str)
-                row.append(int(domain))
+                if len(domain) == 1:
+                    row.append(int(domain))
+                else:
+                    row.append(0)
             rows.append(row)
         return rows
-
-    # Returns True if self.puzzle is a valid sudoku state and False otherwise
-    # Does NOT check for uniqueness of values
-    def goal_test(self):
-        # All units must sum to exactly 45: sum([1 to 9])
-        # Check if rows sum to 45
-        row_valid = all(map(lambda x: sum(x) == 45, self.get_rows()))
-        # Check if columns sum to 45
-        col_valid = all(map(lambda x: sum(x) == 45, self.get_cols()))
-        # Check if blocks sum to 45
-        blocks_valid = all(map(lambda x: sum(x) == 45, self.get_blocks()))
-        return row_valid and col_valid and blocks_valid
-
-    # Transpose a Matrix represented by a list of lists
-    def transpose(self, matrix):
-        return list(zip(*matrix))
-
-    def get_rows(self):
-        return copy.deepcopy(self.puzzle)
-
-    def get_cols(self):
-        return self.transpose(self.get_rows())
-
-    def get_blocks(self):
-        block_indexes = [] # List of lists of indexes for a block
-        for X in ('123', '456', '789'):
-            for Y in ('123', '456', '789'):
-                block_indexes.append([(int(x), int(y)) for x in X for y in Y])
-        blocks = []
-        for indexes in block_indexes:
-            block = []
-            for row, col in indexes:
-                block.append(self.puzzle[row][col])
-            blocks.append(block)
-        return blocks
 
     # Returns the Value of a Square only if its domain is strictly of length 1
     def value_of(self, square):
@@ -118,34 +52,125 @@ class Sudoku(object):
             raise ValueError(err_str)
 
     # AC-3 Algorithm that updates puzzle and square_domain in place
-    # Constraint 1: AllDiff in all units
-    # Constraint 2: An extension of AllDiff used to infer the value of a square
-    # via Set-Difference between the domain of the square and all its peers
+    # Constraint: AllDiff in all units
     def propagate_constraints(self):
-        # Start from a square that already has a value assigned
-        current_square = self.get_an_assigned_square()
-        current_value = self.value_of(current_square)
-
-        # Queue of start_square's peer squares
-        queue = deque(self.get_peers(start_square))
+        assigned_queue = deque(self.get_all_assigned_squares())
         while len(queue) > 0:
-            pass
-            # add to queue if length is one
+            square = queue.popleft()
+            square_val = self.value_of(square)
+            neighbours = self.get_neighbours(square)
+            # Only consider updated_neighbours to avoid infinite loop
+            updated_neighbours = self.shrink_domains(neighbours, square_val)       # This should raise an error if domain goes to zero for any of the squares
+            for neighbour in updated_neighbours:
+                if self.size_of_domain(neighbour) == 1:
+                    assigned_queue.append(neighbour)
+        # Update self.puzzle
+        self.puzzle = self.domains_to_puzzle()
+
+    def get_all_assigned_squares(self):
+        assigned_squares = []
+        for row in range(9):
+            for col in range(9):
+                square = (row, col)
+                if len(self.square_domain[square]) == 1:
+                    assigned_squares.append(square)
+        return assigned_squares
+
+    def get_neighbours(self, square):
+        row     = filter(lambda x: square in x, self.get_rows())[0]
+        col     = filter(lambda x: square in x, self.get_cols())[0]
+        block   = filter(lambda x: square in x, self.get_blocks())[0]
+        row.remove(square)
+        col.remove(square)
+        block.remove(square)
+        return row + col + block
+
+    def shrink_domains(self, neighbours, value):
+        updated_neighbours = []
+        for neighbour in neighbours:
+            domain = self.square_domain[neighbour]
+            if str(value) in domain:
+                self.square_domain[neighbour] = domain.replace(str(value), '')
+                updated_neighbours.append(neighbour)
+        return updated_neighbours
+
+    def size_of_domain(self, neighbour):
+        return len(self.square_domain[neighbour])
+
+    def backtrack_search(self, state, domains):
+        # The graph has been preprocessed
+        # Get all the squares that have not been assigned sort in descending order
+        incomplete_squares = self.get_incomplete_squares(state)  ########## If any domains are empty, return an empty list
+        if len(incomplete_squares) == 0:
+            return self.goal_test(state)
+        square = incomplete_squares.pop()
+        for value in domains[square]:
+            new_state = copy.deepcopy(state)
+            new_domains = copy.deepcopy(domains)
+            new_state[square[0]][square[1]] = int(value)    # type(value): str
+            new_domains[square] = value                     # type(value): str
+            # Create a new copy where this value has been assigned to the Square
+            # Call backtrack_search
+            # If true, return state
+        pass
 
 
     def solve(self):
-        values = dict((square, digits) for square in squares)
+        self.propagate_constraints()    # AC-3 algorithm: Preprocessing
+        # Backtracking (DFS) algorithm
+        state, domains = self.backtrack_search(self.puzzle, self.square_domain)
 
-        for i in range(9):
-            for j in range(9):
-                digit = str(self.puzzle[i][j])
-                if digit != '0':
-                    self.assign((i + 1, j + 1), digit, values)
 
-        self.ans = self.values_to_puzzle(values)
-        return self.ans
 
+    # (True, State) if self.puzzle is a valid sudoku state, else (False, State)
+    # Does NOT check for uniqueness of values
+    def goal_test(self, state):
+        # All units must sum to exactly 45: sum([1 to 9])
+        # Check if rows sum to 45
+        row_valid = all(map(lambda x: sum(x) == 45, self.get_rows(state)))
+        # Check if columns sum to 45
+        col_valid = all(map(lambda x: sum(x) == 45, self.get_cols(state)))
+        # Check if blocks sum to 45
+        blocks_valid = all(map(lambda x: sum(x) == 45, self.get_blocks(state)))
+        return row_valid and col_valid and blocks_valid, state
+
+    # Transpose a Matrix represented by a list of lists
+    def transpose(self, matrix):
+        return list(zip(*matrix))
+
+    def get_rows(self, state):
+        return copy.deepcopy(state)
+
+    def get_cols(self, state):
+        return self.transpose(self.get_rows(state))
+
+    def get_blocks(self, state):
+        block_indexes = [] # List of lists of indexes for a block
+        for X in ('123', '456', '789'):
+            for Y in ('123', '456', '789'):
+                block_indexes.append([(int(x), int(y)) for x in X for y in Y])
+        blocks = []
+        for indexes in block_indexes:
+            block = []
+            for row, col in indexes:
+                block.append(state[row][col])
+            blocks.append(block)
+        return blocks
+
+    ############################# Siuhongs Methods #############################
+
+    # def solve(self):
+    #     values = dict((square, digits) for square in squares)
     #
+    #     for i in range(9):
+    #         for j in range(9):
+    #             digit = str(self.puzzle[i][j])
+    #             if digit != '0':
+    #                 self.assign((i + 1, j + 1), digit, values)
+    #
+    #     self.ans = self.values_to_puzzle(values)
+    #     return self.ans
+
     def assign(self, square, number, values):
         rest = values[square].replace(number, '')
         for digit in rest:
@@ -171,30 +196,6 @@ class Sudoku(object):
 
         return values
 
-    # DFS on a fixed ordering of the Squares (Variables)
-    def backtrack_search(self):
-        pass
-
-    def update_peers(self):
-        pass
-
-    def set_value(self):
-        pass
-
-    def decrement_domain(self):
-        pass
-
-    def get_peers(self):
-        pass
-
-    def validity_check(self):
-        pass
-
-    def solve(self):
-        # Infer values according to the already provided values
-        self.propagate_constraints()    # AC-3 algorithm
-        self.backtrack_search()         # Backtracking (DFS) algorithm
-        return self.domains_to_puzzle()
 
 
 if __name__ == "__main__":
