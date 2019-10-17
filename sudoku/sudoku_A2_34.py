@@ -1,3 +1,7 @@
+## CS3243 Sudoku AY2019/20 Sem 1
+# Authors: Cheong Siu Hong (A0188018Y) & Douglas Wei Jing Allwood (A0183939L)
+# Date: 17 October 2019
+
 import sys
 import copy
 from collections import deque
