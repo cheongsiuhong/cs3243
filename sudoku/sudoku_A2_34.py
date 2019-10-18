@@ -1,7 +1,10 @@
+# CS3243 Sudoku AY2019/20 Sem 1
+# Authors: Cheong Siu Hong (A0188018Y) & Douglas Wei Jing Allwood (A0183939L)
+# Date: 17 October 2019
+
 import sys
 import copy
 from collections import deque
-import pprint
 
 
 class Sudoku(object):
@@ -203,11 +206,17 @@ class Sudoku(object):
                     squares_left_for_digit = [
                         square for square in unit if digit in domains[square]]
                     spaces_left = len(squares_left_for_digit)
+
                     if spaces_left == 1:
                         last_square = squares_left_for_digit[0]
                         domains[last_square] = digit
                         self.shrink_domains_recursive(
                             last_square, digit, domains)
+                            
+                    elif spaces_left == 0:  # There are no squares that can take that value
+                        # The current square cannot take this digit
+                        domains[square] = domains[square].replace(digit, '')
+                        return domains      # Early termination
 
         return domains
 
