@@ -8,7 +8,7 @@ class Sudoku(object):
 
     # 1. Assign all values that can be deterministically assigned based off
     # what values peers in the same Unit have taken.
-    # 3. Perform Back-Tracking Search
+    # 2. Perform Back-Tracking Search with constraint propagation
 
     def __init__(self, puzzle):
         self.digits = '123456789'
@@ -208,6 +208,11 @@ class Sudoku(object):
                         domains[last_square] = digit
                         self.shrink_domains_recursive(
                             last_square, digit, domains)
+                    elif spaces_left == 0:  # There are no squares that can take that value
+                        # The current square cannot take this digit
+                        domains[square] = domains[square].replace(digit, '')
+                        return domains      # Early termination
+
 
         return domains
 
