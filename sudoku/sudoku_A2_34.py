@@ -263,4 +263,3 @@ if __name__ == "__main__":
             for j in range(9):
                 f.write(str(ans[i][j]) + " ")
             f.write("\n")
->>>>>> > 3db3d73d58cc1fd2d8e0c3744ec4effb5e24e3ac: sudoku/sudoku_A2_34.py
